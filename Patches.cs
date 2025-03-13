@@ -20,6 +20,9 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
+            OnGUIPatch.IsTimerDisabled = __instance.KCIGKBNBPNN == "SUR" || __instance.KCIGKBNBPNN == "SBX" || 
+                __instance.KCIGKBNBPNN == "THR";
+
             foreach (var action in GameModeManager.Instance.GetActionsForAwake(__instance))
             {
                 try
@@ -58,34 +61,44 @@ namespace CustomGameModesFramework.Patches
     public static class OnGUIPatch
     {
         public static bool IsTimerDisabled = false;
+        public static bool ShowLeadingPlayerText = false;
+        public static bool ShowWaitingForPlayersText = false;
+        public static string RoundEndedText = string.Empty;
 
         [HarmonyPrefix]
         public static bool Prefix(RoomMultiplayerMenu __instance)
         {
-            string gameMode = __instance.KCIGKBNBPNN;
-            IsTimerDisabled = gameMode == "SUR" || gameMode == "SBX" || gameMode == "THR";
-
             GUI.skin = __instance.BIPMFIBNFBC;
             GUI.color = new Color(1f, 1f, 1f, 0.7f);
             float num = Mathf.CeilToInt(__instance.DIGCEKFFHPP);
             int seconds = Mathf.FloorToInt(num % 60f);
             int minutes = Mathf.FloorToInt(num / 60f % 60f);
+            string gameMode = __instance.KCIGKBNBPNN;
             string timeText = $"{minutes:00}:{seconds:00}";
 
             GUIStyle guiStyle = GUI.skin.GetStyle("Label");
             int fontSize = Screen.height / 20;
 
-            if (!IsTimerDisabled)
+            if (!ShowWaitingForPlayersText)
             {
                 guiStyle.alignment = TextAnchor.MiddleCenter;
 
-                // waitingForPlayers Text
-                if (__instance.AHHCEEGJKPB)
-                    timeText = __instance.OEOFGGDEFPP;
-
                 DrawTextWithOutline(__instance, new Rect(0f, 45f, Screen.width, fontSize), 
-                    timeText, (float)(fontSize / 1.5f), guiStyle);
+                    __instance.OEOFGGDEFPP, (float)(fontSize / 1.5f), guiStyle);
             }
+            else
+            {
+                if (!IsTimerDisabled)
+                {
+                    guiStyle.alignment = TextAnchor.MiddleCenter;
+
+                    DrawTextWithOutline(__instance, new Rect(0f, 45f, Screen.width, fontSize), 
+                        timeText, (float)(fontSize / 1.5f), guiStyle);
+                }
+            }
+
+            if (ShowLeadingPlayerText && gameMode != "INF")
+                HandleLeadingPlayerText(__instance, fontSize, guiStyle);
 
             if (gameMode == "INF")
                 HandleInfectedGameMode(__instance, fontSize, guiStyle);
@@ -109,14 +122,10 @@ namespace CustomGameModesFramework.Patches
 
         private static void HandleInfectedGameMode(RoomMultiplayerMenu instance, int fontSize, GUIStyle guiStyle)
         {
-            // Leading Player Text
-            if (!instance.DAEFCOIPNCP && !instance.AHHCEEGJKPB && instance.HGKEEDKPGOD.Length > 2)
-            {
-                GUI.color = Color.white;
+            ShowWaitingForPlayersText = true;
 
-                DrawTextWithOutline(instance, new Rect(0f, 45 + fontSize, Screen.width, fontSize), 
-                    $"{instance.HGKEEDKPGOD}{instance.POCPFDCEKIL}", (float)(fontSize / 1.75f), guiStyle);
-            }
+            if (!instance.AHHCEEGJKPB)  
+                HandleLeadingPlayerText(instance, fontSize, guiStyle);
 
             // You are Infected Text
             if (PhotonNetwork.player.GetCustomPropertiesV2("TeamName")?.ToString() == instance.KGLOGDGOELM.teamName)
@@ -144,6 +153,20 @@ namespace CustomGameModesFramework.Patches
             }
         }
 
+        private static void HandleLeadingPlayerText(RoomMultiplayerMenu instance, int fontSize, GUIStyle guiStyle)
+        {
+            if (!instance.DAEFCOIPNCP && instance.HGKEEDKPGOD?.Length > 2)
+            {
+                GUI.color = Color.white;
+
+                if (instance.HGKEEDKPGOD.EndsWith("|2"))
+                    instance.HGKEEDKPGOD = instance.HGKEEDKPGOD.Split("|2")[0];
+
+                DrawTextWithOutline(instance, new Rect(0f, 45 + fontSize, Screen.width, fontSize), 
+                    $"{instance.HGKEEDKPGOD}{instance.POCPFDCEKIL}", (float)(fontSize / 1.75f), guiStyle);
+            }
+        }
+
         private static void HandleSurvivalGameMode(RoomMultiplayerMenu instance, GUIStyle guiStyle)
         {
             guiStyle.alignment = TextAnchor.MiddleLeft;
@@ -160,9 +183,12 @@ namespace CustomGameModesFramework.Patches
         {
             guiStyle.alignment = TextAnchor.MiddleCenter;
 
+            if (!string.IsNullOrEmpty(instance.NJMDNCGLNHH) && string.IsNullOrEmpty(RoundEndedText))
+                RoundEndedText = instance?.NJMDNCGLNHH;
+
             // Final Text
             DrawTextWithOutline(instance, new Rect(0f, Screen.height / 2, Screen.width, fontSize), 
-                instance?.NJMDNCGLNHH, (float)(fontSize / 1.5f), guiStyle);
+                RoundEndedText, (float)(fontSize / 1.5f), guiStyle);
 
             // Restarting Text
             if (instance.KCIGKBNBPNN == "INF")
@@ -192,6 +218,9 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
+            if (PhotonNetwork.playerList.Count < 1)
+                OnGUIPatch.ShowWaitingForPlayersText = false;
+
             foreach (var action in GameModeManager.Instance.GetActionsForFixedUpdate(__instance))
             {
                 try
@@ -328,6 +357,9 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
+            if (__instance == null)
+                return;
+
             foreach (var action in GameModeManager.Instance.GetActionsForRestart(__instance))
             {
                 try
@@ -345,20 +377,45 @@ namespace CustomGameModesFramework.Patches
     [HarmonyPatch(typeof(RagdollController), "OnGUI")]
     public static class RespawnPlayerGUIPatch
     {
-        [HarmonyPostfix]
-        public static void Postfix(RagdollController __instance)
+        public static bool ShowRespawnText = true;
+
+        [HarmonyPrefix]
+        public static bool Prefix(RagdollController __instance)
         {
-            foreach (var action in GameModeManager.Instance.GetActionsForRespawnPlayerGUI(__instance))
+            if (Camera.main)
             {
-                try
-                {
-                    action?.Invoke();
-                }
-                catch (Exception e)
-                {
-                    MelonLogger.Warning($"Error while performing action for RespawnPlayerGUI: {e.Message}");
-                }
+                UnityEngine.Object.Destroy(__instance.JKBNHPGGIDE);
+                UnityEngine.Object.Destroy(__instance);
             }
+
+            if (__instance.KCIGKBNBPNN != "SUR" && __instance.OGLEOGIHGLH && __instance.JKBNHPGGIDE)
+            {
+                GUI.skin = __instance.LCBGEPHMBMK;
+
+                foreach (var action in GameModeManager.Instance.GetActionsForRespawnPlayerGUI(__instance))
+                {
+                    try
+                    {
+                        action?.Invoke();
+                    }
+                    catch (Exception e)
+                    {
+                        MelonLogger.Warning($"Error while performing action for RespawnPlayerGUI: {e.Message}");
+                    }
+                }
+
+                string labelText = PhotonNetwork.offlineMode && __instance.KCIGKBNBPNN != "SBX"
+                    ? __instance.AHOHGGNPBLG
+                    : $"{__instance.AHOHGGNPBLG}: {__instance.NADEDDKIIJL}";
+
+                if (ShowRespawnText)
+                    GUI.Label(new Rect(Screen.width / 2 - 75, Screen.height / 2 - 15, 150f, 30f), labelText);
+
+                if (__instance.KCIGKBNBPNN == "INF" && ShowRespawnText)
+                    GUI.Label(new Rect(Screen.width / 2 - 75, Screen.height / 2 - 45, 150f, 30f), $"<color=red>{__instance.DKJLDNCOANF}</color>");
+            }
+
+            return false;
         }
     }
 
@@ -437,6 +494,43 @@ namespace CustomGameModesFramework.Patches
         }
     }
 
+    [HarmonyPatch(typeof(PlayerNetworkController), "Update")]
+    public static class FriendlyFirePatch
+    {
+        public static bool IsFriendlyFireDisabled = true;
+
+        [HarmonyPostfix]
+        public static void Postfix(PlayerNetworkController __instance)
+        {
+            if ((bool)!__instance?.photonView?.isMine)
+                HandleFriendlyFire(__instance, IsFriendlyFireDisabled);
+        }
+
+        private static void HandleFriendlyFire(PlayerNetworkController instance, bool isDisabled)
+        {
+            if (isDisabled)
+            {
+                instance.AHCJMNLNOGI.enabled = true;
+                instance.FJEJDPCPOJC.IACKFCDKMLP = true;
+            }
+            else
+            {
+                HitBox hitBox = instance.gameObject.GetComponent<HitBox>();
+
+                instance.FJEJDPCPOJC.IACKFCDKMLP = false;                
+                instance.AHCJMNLNOGI.enabled = false;
+
+                if (hitBox == null)
+                {
+                    instance.gameObject.AddComponent<HitBox>();
+                    hitBox = instance.gameObject.GetComponent<HitBox>();
+                    hitBox.FJEJDPCPOJC = instance.FJEJDPCPOJC;
+                    hitBox.DHGDMKPLBJH = 10f;
+                }
+            }
+        }
+    }
+
     [HarmonyPatch(typeof(LobbyMenu), "Start")]
     public static class LobbyMenuStartPatch
     {
@@ -469,7 +563,7 @@ namespace CustomGameModesFramework.Patches
                 var newSize = new AllSizes
                 {
                     sizeName = oldSize.sizeName,
-                    playerCount = new List<string>(oldSize.playerCount)
+                    playerCount = [.. oldSize.playerCount]
                 };
 
                 LobbyMenuOptionsPatch.AllSizes.Add(newSize);

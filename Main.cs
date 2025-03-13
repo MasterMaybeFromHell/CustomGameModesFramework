@@ -2,7 +2,7 @@
 using MelonLoader;
 using System.Reflection;
 
-[assembly: MelonInfo(typeof(CustomGameModesFramework.Main), "CustomGameModesFramework", "1.0.0", "MasterHell", null)]
+[assembly: MelonInfo(typeof(CustomGameModesFramework.Main), "CustomGameModesFramework", "1.1.0", "MasterHell", null)]
 [assembly: MelonGame("ZeoWorks", "Slendytubbies 3")]
 [assembly: MelonColor(255, 0, 128, 255)]
 
