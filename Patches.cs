@@ -14,16 +14,17 @@ namespace CustomGameModesFramework.Patches
 		public List<string> playerCount;
     }
 
-    [HarmonyPatch(typeof(RoomMultiplayerMenu), "LOHLFHPLKKD")]
-    public static class AwakePatch
+    [HarmonyPatch(typeof(RoomMultiplayerMenu), "Start")]
+    public static class StartPatch
     {
-        [HarmonyPostfix]
-        public static void Postfix(RoomMultiplayerMenu __instance)
-        {
-            OnGUIPatch.IsTimerDisabled = __instance.KCIGKBNBPNN == "SUR" || __instance.KCIGKBNBPNN == "SBX" || 
-                __instance.KCIGKBNBPNN == "THR";
+        public static string GameMode;
 
-            foreach (var action in GameModeManager.Instance.GetActionsForAwake(__instance))
+        [HarmonyPrefix]
+        public static bool Prefix(RoomMultiplayerMenu __instance)
+        {
+            GameMode = PhotonNetwork.room.CustomProperties["GM001'"].ToString();
+
+            foreach (var action in GameModeManager.Instance.GetActionsForStart(__instance))
             {
                 try
                 {
@@ -31,7 +32,32 @@ namespace CustomGameModesFramework.Patches
                 }
                 catch (Exception e)
                 {
-                    MelonLogger.Warning($"Error while performing action for Awake: {e.Message}");
+                    MelonLogger.Warning($"Error while performing action for Start: {e.Message}");
+                }
+            }
+
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(RoomMultiplayerMenu), "LOHLFHPLKKD")]
+    public static class SetupRoomPatch
+    {
+        [HarmonyPostfix]
+        public static void Postfix(RoomMultiplayerMenu __instance)
+        {
+            OnGUIPatch.EnableTimer = !(StartPatch.GameMode == "SUR" || StartPatch.GameMode == "SBX" 
+                || StartPatch.GameMode == "THR");
+
+            foreach (var action in GameModeManager.Instance.GetActionsForSetupRoom(__instance))
+            {
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Warning($"Error while performing action for SetupRoom: {e.Message}");
                 }
             }
         }
@@ -60,9 +86,10 @@ namespace CustomGameModesFramework.Patches
     [HarmonyPatch(typeof(RoomMultiplayerMenu), "OnGUI")]
     public static class OnGUIPatch
     {
-        public static bool IsTimerDisabled = false;
-        public static bool ShowLeadingPlayerText = false;
-        public static bool ShowWaitingForPlayersText = false;
+        public static bool EnableTimer = false;
+        public static bool ShowLeaderText = false;
+        public static bool ShouldShowWaitingText = false;
+        public static bool IsWaitingForPlayers = false;
         public static string RoundEndedText = string.Empty;
 
         [HarmonyPrefix]
@@ -70,25 +97,23 @@ namespace CustomGameModesFramework.Patches
         {
             GUI.skin = __instance.BIPMFIBNFBC;
             GUI.color = new Color(1f, 1f, 1f, 0.7f);
+            GUIStyle guiStyle = GUI.skin.GetStyle("Label");
             float num = Mathf.CeilToInt(__instance.DIGCEKFFHPP);
             int seconds = Mathf.FloorToInt(num % 60f);
             int minutes = Mathf.FloorToInt(num / 60f % 60f);
-            string gameMode = __instance.KCIGKBNBPNN;
+            int fontSize = Screen.height / 20;
             string timeText = $"{minutes:00}:{seconds:00}";
 
-            GUIStyle guiStyle = GUI.skin.GetStyle("Label");
-            int fontSize = Screen.height / 20;
-
-            if (!ShowWaitingForPlayersText)
+            if (ShouldShowWaitingText && IsWaitingForPlayers)
             {
                 guiStyle.alignment = TextAnchor.MiddleCenter;
 
                 DrawTextWithOutline(__instance, new Rect(0f, 45f, Screen.width, fontSize), 
                     __instance.OEOFGGDEFPP, (float)(fontSize / 1.5f), guiStyle);
             }
-            else
+            else if (!ShouldShowWaitingText)
             {
-                if (!IsTimerDisabled)
+                if (EnableTimer)
                 {
                     guiStyle.alignment = TextAnchor.MiddleCenter;
 
@@ -97,13 +122,13 @@ namespace CustomGameModesFramework.Patches
                 }
             }
 
-            if (ShowLeadingPlayerText && gameMode != "INF")
+            if (ShowLeaderText && StartPatch.GameMode != "INF")
                 HandleLeadingPlayerText(__instance, fontSize, guiStyle);
 
-            if (gameMode == "INF")
+            if (StartPatch.GameMode == "INF")
                 HandleInfectedGameMode(__instance, fontSize, guiStyle);
 
-            if (gameMode == "SUR")
+            if (StartPatch.GameMode == "SUR")
                 HandleSurvivalGameMode(__instance, guiStyle);
 
             if (__instance.DAEFCOIPNCP)
@@ -122,7 +147,7 @@ namespace CustomGameModesFramework.Patches
 
         private static void HandleInfectedGameMode(RoomMultiplayerMenu instance, int fontSize, GUIStyle guiStyle)
         {
-            ShowWaitingForPlayersText = true;
+            IsWaitingForPlayers = true;
 
             if (!instance.AHHCEEGJKPB)  
                 HandleLeadingPlayerText(instance, fontSize, guiStyle);
@@ -191,7 +216,7 @@ namespace CustomGameModesFramework.Patches
                 RoundEndedText, (float)(fontSize / 1.5f), guiStyle);
 
             // Restarting Text
-            if (instance.KCIGKBNBPNN == "INF")
+            if (StartPatch.GameMode == "INF")
                 DrawTextWithOutline(instance, new Rect(0f, Screen.height / 2 - fontSize, Screen.width, fontSize), 
                     instance.LOLBLDOFPPN, (float)(fontSize / 1.25f), guiStyle);
         }
@@ -218,8 +243,7 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
-            if (PhotonNetwork.playerList.Count < 1)
-                OnGUIPatch.ShowWaitingForPlayersText = false;
+            OnGUIPatch.ShouldShowWaitingText = PhotonNetwork.playerList.Count < 2 && OnGUIPatch.IsWaitingForPlayers;
 
             foreach (var action in GameModeManager.Instance.GetActionsForFixedUpdate(__instance))
             {
@@ -245,16 +269,15 @@ namespace CustomGameModesFramework.Patches
             if (__instance.CNLHJAICIBH != null)
                 PhotonNetwork.Destroy(__instance.CNLHJAICIBH);
 
-            string gameMode = __instance.KCIGKBNBPNN;           // team1
-            teamName = string.IsNullOrEmpty(teamName) ? __instance.OJPBAOICLJK.teamName : teamName;
+            teamName = string.IsNullOrEmpty(teamName) ? __instance?.OJPBAOICLJK?.teamName : teamName;
 
             SetTeamNameInPhotonProperties(teamName);
 
             // If teamName equals team 1
-            if (teamName == __instance.OJPBAOICLJK.teamName)
-                HandleTeamOneSpawning(__instance, gameMode);
+            if (teamName == __instance?.OJPBAOICLJK?.teamName)
+                HandleTeamOneSpawning(__instance, StartPatch.GameMode);
             else
-                HandleTeamTwoSpawning(__instance, gameMode);
+                HandleTeamTwoSpawning(__instance, StartPatch.GameMode);
 
             ExecuteSpawnPlayerActions(__instance);
 
@@ -267,7 +290,7 @@ namespace CustomGameModesFramework.Patches
         {
             Hashtable hashtable = new();
             hashtable.Add("TeamName", teamName);
-            PhotonNetwork.player.SetCustomPropertiesV2(hashtable, null, false);
+            PhotonNetwork.player?.SetCustomPropertiesV2(hashtable, null, false);
         }
 
         private static void HandleTeamOneSpawning(RoomMultiplayerMenu instance, string gameMode)
@@ -285,7 +308,7 @@ namespace CustomGameModesFramework.Patches
                 case "INF":
                 case "SBX":
                 case "SUR":
-                    SpawnPrefab(instance, instance.BGOEEADMCBE.name, instance.OJPBAOICLJK);
+                    SpawnPrefab(instance, instance?.BGOEEADMCBE?.name, instance?.OJPBAOICLJK);
                     break;
             }
         }
@@ -295,11 +318,11 @@ namespace CustomGameModesFramework.Patches
             switch (gameMode)
             {
                 case "VS":
-                    SpawnPrefab(instance, "VS/" + instance.GetComponent<ClassicMechanics>().FKEIPFJBJHP, 
-                        instance.KGLOGDGOELM);
+                    SpawnPrefab(instance, "VS/" + instance?.GetComponent<ClassicMechanics>()?.FKEIPFJBJHP, 
+                        instance?.KGLOGDGOELM);
                     break;
                 case "INF":
-                    SpawnPrefab(instance, "INF/PlayerNewborn", instance.KGLOGDGOELM);
+                    SpawnPrefab(instance, "INF/PlayerNewborn", instance?.KGLOGDGOELM);
                     break;
             }
         }
@@ -327,6 +350,28 @@ namespace CustomGameModesFramework.Patches
             }
         }
     }
+    
+    [HarmonyPatch(typeof(RoomMultiplayerMenu), "QuitRoom")]
+    public static class QuitRoomPatch
+    {
+        [HarmonyPrefix]
+        public static bool Prefix(RoomMultiplayerMenu __instance)
+        {
+            foreach (var action in GameModeManager.Instance.GetActionsForQuitRoom(__instance))
+            {
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Warning($"Error while performing action for QuitRoom: {e.Message}");
+                }
+            }
+
+            return true;
+        }
+    }
 
     [HarmonyPatch(typeof(RoomMultiplayerMenu.ELNOHBJFICO), "MoveNext")]
     public static class RoundEndedPatch
@@ -334,9 +379,6 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
-            if (__instance == null)
-                return;
-
             foreach (var action in GameModeManager.Instance.GetActionsForRoundEnded(__instance))
             {
                 try
@@ -357,9 +399,6 @@ namespace CustomGameModesFramework.Patches
         [HarmonyPostfix]
         public static void Postfix(RoomMultiplayerMenu __instance)
         {
-            if (__instance == null)
-                return;
-
             foreach (var action in GameModeManager.Instance.GetActionsForRestart(__instance))
             {
                 try
@@ -388,34 +427,39 @@ namespace CustomGameModesFramework.Patches
                 UnityEngine.Object.Destroy(__instance);
             }
 
-            if (__instance.KCIGKBNBPNN != "SUR" && __instance.OGLEOGIHGLH && __instance.JKBNHPGGIDE)
+            if (StartPatch.GameMode != "SUR" && __instance.OGLEOGIHGLH && __instance.JKBNHPGGIDE)
             {
                 GUI.skin = __instance.LCBGEPHMBMK;
 
-                foreach (var action in GameModeManager.Instance.GetActionsForRespawnPlayerGUI(__instance))
-                {
-                    try
-                    {
-                        action?.Invoke();
-                    }
-                    catch (Exception e)
-                    {
-                        MelonLogger.Warning($"Error while performing action for RespawnPlayerGUI: {e.Message}");
-                    }
-                }
+                ExecuteRespawnPlayerGUIActions(__instance);
 
-                string labelText = PhotonNetwork.offlineMode && __instance.KCIGKBNBPNN != "SBX"
+                string labelText = PhotonNetwork.offlineMode && StartPatch.GameMode != "SBX"
                     ? __instance.AHOHGGNPBLG
                     : $"{__instance.AHOHGGNPBLG}: {__instance.NADEDDKIIJL}";
 
                 if (ShowRespawnText)
                     GUI.Label(new Rect(Screen.width / 2 - 75, Screen.height / 2 - 15, 150f, 30f), labelText);
 
-                if (__instance.KCIGKBNBPNN == "INF" && ShowRespawnText)
+                if (StartPatch.GameMode == "INF" && ShowRespawnText)
                     GUI.Label(new Rect(Screen.width / 2 - 75, Screen.height / 2 - 45, 150f, 30f), $"<color=red>{__instance.DKJLDNCOANF}</color>");
             }
 
             return false;
+        }
+
+        private static void ExecuteRespawnPlayerGUIActions(RagdollController instance)
+        {
+            foreach (var action in GameModeManager.Instance.GetActionsForRespawnPlayerGUI(instance))
+            {
+                try
+                {
+                    action?.Invoke();
+                }
+                catch (Exception e)
+                {
+                    MelonLogger.Warning($"Error while performing action for RespawnPlayerGUI: {e.Message}");
+                }
+            }
         }
     }
 
@@ -429,13 +473,12 @@ namespace CustomGameModesFramework.Patches
             {
                 UnityEngine.Object.Destroy(__instance?.JKBNHPGGIDE);
 
-                string gameMode = __instance?.KCIGKBNBPNN;
-                string teamName = GetTeamName(gameMode);
+                string teamName = GetTeamName(StartPatch.GameMode);
 
-                if (PhotonNetwork.offlineMode && IsGameModeWithDisconnect(gameMode))
+                if (PhotonNetwork.offlineMode && IsGameModeWithDisconnect(StartPatch.GameMode))
                     PhotonNetwork.Disconnect();
 
-                SpawnPlayer(gameMode, teamName);
+                SpawnPlayer(StartPatch.GameMode, teamName);
                 ExecuteRespawnPlayerActions(__instance);
                 UnityEngine.Object.Destroy(__instance);
             }
@@ -445,7 +488,7 @@ namespace CustomGameModesFramework.Patches
 
         private static string GetTeamName(string gameMode)
         {
-            string teamName = PhotonNetwork.player.GetCustomPropertiesV2("TeamName").ToString();
+            string teamName = PhotonNetwork.player.GetCustomPropertiesV2("TeamName")?.ToString();
 
             if (gameMode == "INF")
                 teamName = GameObject.FindWithTag("Network").GetComponent<RoomMultiplayerMenu>().KGLOGDGOELM.teamName;
@@ -497,36 +540,36 @@ namespace CustomGameModesFramework.Patches
     [HarmonyPatch(typeof(PlayerNetworkController), "Update")]
     public static class FriendlyFirePatch
     {
+        private static bool EnableFriendlyFire = false;
         public static bool IsFriendlyFireDisabled = true;
 
         [HarmonyPostfix]
         public static void Postfix(PlayerNetworkController __instance)
         {
-            if ((bool)!__instance?.photonView?.isMine)
-                HandleFriendlyFire(__instance, IsFriendlyFireDisabled);
-        }
+            if (__instance == null)
+                return;
 
-        private static void HandleFriendlyFire(PlayerNetworkController instance, bool isDisabled)
-        {
-            if (isDisabled)
-            {
-                instance.AHCJMNLNOGI.enabled = true;
-                instance.FJEJDPCPOJC.IACKFCDKMLP = true;
-            }
-            else
-            {
-                HitBox hitBox = instance.gameObject.GetComponent<HitBox>();
+            if (IsFriendlyFireDisabled || (bool)__instance?.photonView?.isMine)
+                return;
 
-                instance.FJEJDPCPOJC.IACKFCDKMLP = false;                
-                instance.AHCJMNLNOGI.enabled = false;
+            if (EnableFriendlyFire)
+            {
+                HitBox hitBox = __instance?.gameObject.GetComponent<HitBox>();
+
+                __instance.FJEJDPCPOJC.IACKFCDKMLP = false;
+                __instance.AHCJMNLNOGI.enabled = false;
 
                 if (hitBox == null)
                 {
-                    instance.gameObject.AddComponent<HitBox>();
-                    hitBox = instance.gameObject.GetComponent<HitBox>();
-                    hitBox.FJEJDPCPOJC = instance.FJEJDPCPOJC;
+                    hitBox = __instance?.gameObject.AddComponent<HitBox>();
+                    hitBox.FJEJDPCPOJC = __instance?.FJEJDPCPOJC;
                     hitBox.DHGDMKPLBJH = 10f;
                 }
+            }
+            else
+            {
+                __instance.AHCJMNLNOGI.enabled = true;
+                __instance.FJEJDPCPOJC.IACKFCDKMLP = true;
             }
         }
     }
@@ -605,8 +648,8 @@ namespace CustomGameModesFramework.Patches
     [HarmonyPatch(typeof(LobbyMenu), "AJKAOGDBDMH")]
 	public static class LobbyMenuOptionsPatch
 	{
-        public static bool IsTimerOptionDisabled = false;
         public static List<AllSizes> AllSizes = [];
+        public static bool IsTimerOptionDisabled = false;
 
         [HarmonyPrefix]
         private static bool Prefix(LobbyMenu __instance)

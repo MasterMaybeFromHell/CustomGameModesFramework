@@ -2,7 +2,7 @@
 using MelonLoader;
 using System.Reflection;
 
-[assembly: MelonInfo(typeof(CustomGameModesFramework.Main), "CustomGameModesFramework", "1.1.0", "MasterHell", null)]
+[assembly: MelonInfo(typeof(CustomGameModesFramework.Main), "CustomGameModesFramework", "1.1.5", "MasterHell", null)]
 [assembly: MelonGame("ZeoWorks", "Slendytubbies 3")]
 [assembly: MelonColor(255, 0, 128, 255)]
 
@@ -96,16 +96,18 @@ namespace CustomGameModesFramework
 
     public abstract class CustomGameMode
     {
-        public virtual void LobbyMenuOptions(LobbyMenu instance) { }
-        public virtual void OnAwake(RoomMultiplayerMenu instance) { }
+        public virtual void OnStart(RoomMultiplayerMenu instance) { }
+        public virtual void OnSetupRoom(RoomMultiplayerMenu instance) { }
         public virtual void OnStartGame(RoomMultiplayerMenu instance) { }
         public virtual void OnGUI(RoomMultiplayerMenu instance) { }
         public virtual void OnFixedUpdate(RoomMultiplayerMenu instance) { }
         public virtual void OnSpawnPlayer(RoomMultiplayerMenu instance) { }
+        public virtual void OnQuitRoom(RoomMultiplayerMenu instance) { }
         public virtual void OnRoundEnded(RoomMultiplayerMenu instance) { }
         public virtual void OnRestart(RoomMultiplayerMenu instance) { }
         public virtual void OnRespawnPlayerGUI(RagdollController instance) { }
         public virtual void OnRespawnPlayer(RagdollController instance) { }
+        public virtual void LobbyMenuOptions(LobbyMenu instance) { }
     }
 
     public class GameModeManager
@@ -124,11 +126,13 @@ namespace CustomGameModesFramework
             _gameModes.Add(customGameMode);
         }
 
-        public IEnumerable<Action> GetActionsForAwake(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnAwake(instance)));
+        public IEnumerable<Action> GetActionsForStart(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnStart(instance)));
+        public IEnumerable<Action> GetActionsForSetupRoom(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnSetupRoom(instance)));
         public IEnumerable<Action> GetActionsForStartGame(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnStartGame(instance)));
         public IEnumerable<Action> GetActionsForOnGUI(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnGUI(instance)));
         public IEnumerable<Action> GetActionsForFixedUpdate(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnFixedUpdate(instance)));
         public IEnumerable<Action> GetActionsForSpawnPlayer(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnSpawnPlayer(instance)));
+        public IEnumerable<Action> GetActionsForQuitRoom(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnQuitRoom(instance)));
         public IEnumerable<Action> GetActionsForRoundEnded(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnRoundEnded(instance)));
         public IEnumerable<Action> GetActionsForRestart(RoomMultiplayerMenu instance) => _gameModes.Select(mode => new Action(() => mode.OnRestart(instance)));
         public IEnumerable<Action> GetActionsForRespawnPlayerGUI(RagdollController instance) => _gameModes.Select(mode => new Action(() => mode.OnRespawnPlayerGUI(instance)));
